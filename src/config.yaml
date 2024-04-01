@@ -12,12 +12,15 @@ penaltyCOD: 2.0
 mapResolution: 2.0
 
 # width of car
-carWidth: 2.0
+#carWidth: 2.0
+carWidth: 0.4
 # distance from rear to vehicle front end
-LF: 2.0
+#LF: 2.0
+LF: 0.5
 # distance from rear to vehicle back end
-LB: 1.0
+#LB: 1.0
+LB: 0.2
 # obstacle default radius
-obsRadius: 0.8
+obsRadius: 0.05
 # least time to wait for constraint
 constraintWaitTime: 2

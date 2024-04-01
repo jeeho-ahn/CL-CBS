@@ -28,31 +28,36 @@ using libMultiRobotPlanning::PlanResult;
 using namespace libMultiRobotPlanning;
 
 namespace Constants {
+static float steer_limit = 0.2;
+static float speed_limit = 0.4f;
+static float L = 0.29f;
 // [m] --- The minimum turning radius of the vehicle
-static const float r = 3;
-static const float deltat = 6.75 / 180.0 * M_PI;
+static float r = L / tanf(fabs(steer_limit));
+//static const float r = 3;
+//static const float deltat = 6.75 / 180.0 * M_PI;
+static float deltat = speed_limit / r;
 // [#] --- A movement cost penalty for turning (choosing non straight motion
 // primitives)
 static const float penaltyTurning = 1.3;
 // [#] --- A movement cost penalty for reversing (choosing motion primitives >
 // 2)
-static const float penaltyReversing = 2.0;
+static const float penaltyReversing = 100.0;
 // [#] --- A movement cost penalty for change of direction (changing from
 // primitives < 3 to primitives > 2)
 static const float penaltyCOD = 2.0;
 // map resolution
-static const float mapResolution = 2.0;
+static const float mapResolution = 0.1;
 static const float xyResolution = r * deltat;
 static const float yawResolution = deltat;
 
 // width of car
-static const float carWidth = 2.0;
+static const float carWidth = 0.4;
 // distance from rear to vehicle front end
-static const float LF = 2.0;
+static const float LF = 0.5;
 // distance from rear to vehicle back end
-static const float LB = 1.0;
+static const float LB = 0.2;
 // obstacle default radius
-static const float obsRadius = 1;
+static const float obsRadius = 0.05;
 
 // R = 3, 6.75 DEG
 const double dx[] = {r * deltat, r* sin(deltat),  r* sin(deltat),
@@ -471,14 +476,16 @@ class Environment {
 int main() {
   // TODO: read map info from yaml
   std::unordered_set<State> obs;
-  obs.insert(State(6.66799, 9.66868, 0));
-  obs.insert(State(6.86099, 6.20241, 0));
-  obs.insert(State(6.2493, 3.45836, 0));
-  obs.insert(State(6.93504, 0.747862, 0));
-  obs.insert(State(6.81566, 4.75936, 0));
-  State goal(13, 10, -M_PI);
-  State start(2, 2, 0);
-  Environment env(16, 16, obs, goal);
+  //obs.insert(State(6.66799, 9.66868, 0));
+  //obs.insert(State(6.86099, 6.20241, 0));
+  //obs.insert(State(6.2493, 3.45836, 0));
+  //obs.insert(State(6.93504, 0.747862, 0));
+  //obs.insert(State(6.81566, 4.75936, 0));
+  obs.insert(State(4.6, 3, 0));
+  State goal(4, 3, 0);
+  State start(0, 0, 0);
+  //Environment env(16, 16, obs, goal);
+  Environment env(10, 10, obs, goal);
   HybridAStar<State, Action, double, Environment> hybridAStar(env);
   PlanResult<State, Action, double> solution;
   Timer timer;
@@ -494,7 +501,7 @@ int main() {
               << "Runtime: " << timer.elapsedSeconds() << std::endl;
 
     out << "schedule:" << std::endl;
-    out << "  agent1:" << std::endl;
+    out << "  agent0:" << std::endl;
     for (size_t i = 0; i < solution.states.size(); ++i) {
       out << "    - x: " << solution.states[i].first.x << std::endl
           << "      y: " << solution.states[i].first.y << std::endl

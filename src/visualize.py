@@ -14,9 +14,12 @@ matplotlib.use("Qt5Agg")
 
 PLOTLINE = True  # True
 
-carWidth = 2.0
-LF = 2.0
-LB = 1.0
+#carWidth = 2.0
+#LF = 2.0
+#LB = 1.0
+carWidth = 0.4
+LF = 0.5
+LB = 0.2
 obsRadius = 1
 framesPerMove = 3
 
