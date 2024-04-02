@@ -33,7 +33,7 @@ using libMultiRobotPlanning::PlanResult;
 using namespace libMultiRobotPlanning;
 
 namespace Constants {
-static float steer_limit = 0.2;
+static float steer_limit = 0.3;
 static float speed_limit = 0.4f;
 static float L = 0.29f;
 // [m] --- The minimum turning radius of the vehicle
@@ -231,14 +231,14 @@ class Environment {
     updateCostmap();
 
     //test dynamic_obs
-    //dynamic_obs.insert(std::pair<int,State>(1,State(2.46318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(1,State(2.06318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(1,State(1.76318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(1,State(1.46318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(1,State(1.16318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(1,State(0.86318, 2.44999, 0,1)));
-    //dynamic_obs.insert(std::pair<int,State>(11,State(0.56318, 2.44999, 0,1)));
-    //std::cout << "test dobs addeed" << std::endl;
+    dynamic_obs.insert(std::pair<int,State>(1,State(2.46318, 2.44999, 0,1)));
+    dynamic_obs.insert(std::pair<int,State>(2,State(2.06318, 2.44999, 0,2)));
+    dynamic_obs.insert(std::pair<int,State>(3,State(1.76318, 2.44999, 0,3)));
+    dynamic_obs.insert(std::pair<int,State>(4,State(1.46318, 2.44999, 0,4)));
+    dynamic_obs.insert(std::pair<int,State>(5,State(1.16318, 2.44999, 0,5)));
+    dynamic_obs.insert(std::pair<int,State>(6,State(0.86318, 2.44999, 0,6)));
+    dynamic_obs.insert(std::pair<int,State>(7,State(0.56318, 2.44999, 0,7)));
+    std::cout << "test dobs addeed" << std::endl;
   }
 
   struct compare_node {

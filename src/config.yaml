@@ -1,6 +1,6 @@
 # The minimum turning radius of the vehicle
-r: 3
-deltat: 0.706
+r: 0.69
+deltat: 1
 # A movement cost penalty for turning (choosing non straight motion primitives)
 penaltyTurning: 1.5
 # A movement cost penalty for reversing (choosing motion primitives >
