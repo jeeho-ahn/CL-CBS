@@ -107,6 +107,7 @@ class HybridAStar {
     while (!openSet.empty()) {
       Node current = openSet.top();
       m_env.onExpandNode(current.state, current.fScore, current.gScore);
+
       if (m_env.isSolution(current.state, current.gScore, cameFrom)) {
         solution.states.clear();
         solution.actions.clear();

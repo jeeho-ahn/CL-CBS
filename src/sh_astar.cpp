@@ -14,10 +14,15 @@
 #include <ompl/base/spaces/SE2StateSpace.h>
 
 #include <boost/functional/hash.hpp>
+#include <boost/numeric/ublas/matrix.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
 #include <eigen3/Eigen/Dense>
 #include <fstream>
 #include <iostream>
 typedef ompl::base::SE2StateSpace::StateType OmplState;
+typedef boost::geometry::model::d2::point_xy<double> Point;
+typedef boost::geometry::model::segment<Point> Segment;
 
 #include "hybrid_astar.hpp"
 #include "timer.hpp"
@@ -38,7 +43,7 @@ static float r = L / tanf(fabs(steer_limit));
 static float deltat = speed_limit / r;
 // [#] --- A movement cost penalty for turning (choosing non straight motion
 // primitives)
-static const float penaltyTurning = 1.3;
+static const float penaltyTurning = 1.2;
 // [#] --- A movement cost penalty for reversing (choosing motion primitives >
 // 2)
 static const float penaltyReversing = 100.0;
@@ -76,16 +81,109 @@ static inline float normalizeHeadingRad(float t) {
 }
 }  // namespace Constants
 
+// calculate agent collision more precisely BUT need LONGER time
+// #define PRCISE_COLLISION
+
 struct State {
-  State(double x, double y, double yaw) : x(x), y(y), yaw(yaw) {}
+  State(double x, double y, double yaw, int time=0) : x(x), y(y), yaw(yaw), time(time) {
+    rot.resize(2, 2);
+    rot(0, 0) = cos(-this->yaw);
+    rot(0, 1) = -sin(-this->yaw);
+    rot(1, 0) = sin(-this->yaw);
+    rot(1, 1) = cos(-this->yaw);
+#ifdef PRCISE_COLLISION
+    corner1 = Point(
+        this->x -
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LB * 1.1, 2)) *
+                cos(atan2(Constants::carWidth / 2, Constants::LB) - this->yaw),
+        this->y -
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LB * 1.1, 2)) *
+                sin(atan2(Constants::carWidth / 2, Constants::LB) - this->yaw));
+    corner2 = Point(
+        this->x -
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LB * 1.1, 2)) *
+                cos(atan2(Constants::carWidth / 2, Constants::LB) + this->yaw),
+        this->y +
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LB * 1.1, 2)) *
+                sin(atan2(Constants::carWidth / 2, Constants::LB) + this->yaw));
+    corner3 = Point(
+        this->x +
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LF * 1.1, 2)) *
+                cos(atan2(Constants::carWidth / 2, Constants::LF) - this->yaw),
+        this->y +
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LF * 1.1, 2)) *
+                sin(atan2(Constants::carWidth / 2, Constants::LF) - this->yaw));
+    corner4 = Point(
+        this->x +
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LF * 1.1, 2)) *
+                cos(atan2(Constants::carWidth / 2, Constants::LF) + this->yaw),
+        this->y -
+            sqrt(pow(Constants::carWidth / 2 * 1.1, 2) +
+                 pow(Constants::LF * 1.1, 2)) *
+                sin(atan2(Constants::carWidth / 2, Constants::LF) + this->yaw));
+#endif
+  }
+
+  State() = default;
+
+  bool operator==(const State& s) const {
+    return std::tie(time, x, y, yaw) == std::tie(s.time, s.x, s.y, s.yaw);
+  }
+
+  bool agentCollision(const State& other) const {
+#ifndef PRCISE_COLLISION
+    if (pow(this->x - other.x, 2) + pow(this->y - other.y, 2) <
+        pow(2 * Constants::LF, 2) + pow(Constants::carWidth, 2))
+      return true;
+    return false;
+#else
+    std::vector<Segment> rectangle1{Segment(this->corner1, this->corner2),
+                                    Segment(this->corner2, this->corner3),
+                                    Segment(this->corner3, this->corner4),
+                                    Segment(this->corner4, this->corner1)};
+    std::vector<Segment> rectangle2{Segment(other.corner1, other.corner2),
+                                    Segment(other.corner2, other.corner3),
+                                    Segment(other.corner3, other.corner4),
+                                    Segment(other.corner4, other.corner1)};
+    for (auto seg1 = rectangle1.begin(); seg1 != rectangle1.end(); seg1++)
+      for (auto seg2 = rectangle2.begin(); seg2 != rectangle2.end(); seg2++) {
+        if (boost::geometry::intersects(*seg1, *seg2)) return true;
+      }
+    return false;
+#endif
+  }
   State(const State&) = default;
   State(State&&) = default;
   State& operator=(const State&) = default;
   State& operator=(State&&) = default;
 
-  bool operator==(const State& other) const {
-    return std::tie(x, y, yaw) == std::tie(other.x, other.y, other.yaw);
+  //bool operator==(const State& other) const {
+  //  return std::tie(x, y, yaw) == std::tie(other.x, other.y, other.yaw);
+ // }
+
+  
+/*
+  bool obsCollision(const Location& obstacle) const {
+    boost::numeric::ublas::matrix<double> obs(1, 2);
+    obs(0, 0) = obstacle.x - this->x;
+    obs(0, 1) = obstacle.y - this->y;
+
+    auto rotated_obs = boost::numeric::ublas::prod(obs, rot);
+    if (rotated_obs(0, 0) > -Constants::LB - Constants::obsRadius &&
+        rotated_obs(0, 0) < Constants::LF + Constants::obsRadius &&
+        rotated_obs(0, 1) > -Constants::carWidth / 2.0 - Constants::obsRadius &&
+        rotated_obs(0, 1) < Constants::carWidth / 2.0 + Constants::obsRadius)
+      return true;
+    return false;
   }
+  */
 
   friend std::ostream& operator<<(std::ostream& os, const State& s) {
     return os << "(" << s.x << "," << s.y << ":" << s.yaw << ")";
@@ -94,6 +192,11 @@ struct State {
   double x;
   double y;
   double yaw;
+  int time;
+
+  private:
+  boost::numeric::ublas::matrix<double> rot;
+  Point corner1, corner2, corner3, corner4;
 };
 
 namespace std {
@@ -126,6 +229,16 @@ class Environment {
         m_dimx, std::vector<double>(m_dimy, 0));
     m_goal = State(goal.x, goal.y, Constants::normalizeHeadingRad(goal.yaw));
     updateCostmap();
+
+    //test dynamic_obs
+    //dynamic_obs.insert(std::pair<int,State>(1,State(2.46318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(2.06318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(1.76318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(1.46318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(1.16318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(0.86318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(11,State(0.56318, 2.44999, 0,1)));
+    //std::cout << "test dobs addeed" << std::endl;
   }
 
   struct compare_node {
@@ -202,7 +315,7 @@ class Environment {
     path.emplace_back(state);
     for (auto pathidx = 0; pathidx < 5; pathidx++) {
       if (fabs(reedsShepppath.length_[pathidx]) < 1e-6) continue;
-      double deltat, dx, act, cost;
+      double deltat = 0, dx = 0, act = 0, cost = 0;
       switch (reedsShepppath.type_[pathidx]) {
         case 0:  // RS_NOP
           continue;
@@ -285,6 +398,7 @@ class Environment {
   void getNeighbors(const State& s, Action action,
                     std::vector<Neighbor<State, Action, double>>& neighbors) {
     neighbors.clear();
+    double g = Constants::dx[0];
     for (Action act = 0; act < 6; act++) {  // has 6 directions for Reeds-Shepp
       double xSucc, ySucc, yawSucc;
       double g = Constants::dx[0];
@@ -301,11 +415,17 @@ class Environment {
       if (act > 3) {  // backwards
         g = g * Constants::penaltyReversing;
       }
-      State tempState(xSucc, ySucc, yawSucc);
+      State tempState(xSucc, ySucc, yawSucc, s.time+1);
       if (stateValid(tempState)) {
         neighbors.emplace_back(
             Neighbor<State, Action, double>(tempState, act, g));
       }
+    }
+     // wait
+    g = Constants::dx[0];
+    State tempState(s.x, s.y, s.yaw, s.time + 1);
+    if (stateValid(tempState)) {
+      neighbors.emplace_back(Neighbor<State, Action, double>(tempState, 6, g));
     }
   }
 
@@ -331,6 +451,17 @@ class Environment {
     double y_ind = s.y / Constants::mapResolution;
     if (x_ind < 0 || x_ind >= m_dimx || y_ind < 0 || y_ind >= m_dimy)
       return false;
+
+    //dynamic obstacles
+    auto it = dynamic_obs.equal_range(s.time);
+    for (auto itr = it.first; itr != it.second; ++itr) {
+      if (s.agentCollision(itr->second)) return false;
+    }
+    auto itlow = dynamic_obs.lower_bound(-s.time);
+    auto itup = dynamic_obs.upper_bound(-1);
+    for (auto it = itlow; it != itup; ++it)
+      if (s.agentCollision(it->second)) return false;
+
 
     Eigen::Matrix2f rot;
     rot << cos(-s.yaw), -sin(-s.yaw), sin(-s.yaw), cos(-s.yaw);
@@ -419,7 +550,7 @@ class Environment {
                 Constants::dy[act] * cos(-s.yaw);
         yawSucc = Constants::normalizeHeadingRad(s.yaw + Constants::dyaw[act]);
         result.emplace_back(
-            std::make_pair<>(State(xSucc, ySucc, yawSucc), Constants::dx[0]));
+            std::make_pair<>(State(xSucc, ySucc, yawSucc,s.time+1), Constants::dx[0]));
       }
       ratio =
           (deltaLength - static_cast<int>(deltaLength / Constants::dx[act]) *
@@ -437,7 +568,7 @@ class Environment {
                 Constants::dy[act] * cos(-s.yaw);
         yawSucc = Constants::normalizeHeadingRad(s.yaw + Constants::dyaw[act]);
         result.emplace_back(
-            std::make_pair<>(State(xSucc, ySucc, yawSucc),
+            std::make_pair<>(State(xSucc, ySucc, yawSucc,s.time+1),
                              Constants::dx[0] * Constants::penaltyTurning));
       }
       ratio =
@@ -456,7 +587,7 @@ class Environment {
     xSucc = s.x + dx * cos(-s.yaw) - dy * sin(-s.yaw);
     ySucc = s.y + dx * sin(-s.yaw) + dy * cos(-s.yaw);
     yawSucc = Constants::normalizeHeadingRad(s.yaw + dyaw);
-    result.emplace_back(std::make_pair<>(State(xSucc, ySucc, yawSucc),
+    result.emplace_back(std::make_pair<>(State(xSucc, ySucc, yawSucc,s.time+1),
                                          ratio * Constants::dx[0]));
     // std::cout << "Have generate " << result.size() << " path segments:\n\t";
     // for (auto iter = result.begin(); iter != result.end(); iter++)
@@ -471,6 +602,8 @@ class Environment {
   std::unordered_set<State> m_obstacles;
   std::vector<std::vector<double>> holonomic_cost_map;
   State m_goal;
+
+  std::multimap<int, State> dynamic_obs;
 };
 
 int main() {
@@ -481,9 +614,9 @@ int main() {
   //obs.insert(State(6.2493, 3.45836, 0));
   //obs.insert(State(6.93504, 0.747862, 0));
   //obs.insert(State(6.81566, 4.75936, 0));
-  obs.insert(State(4.6, 3, 0));
-  State goal(4, 3, 0);
-  State start(0, 0, 0);
+  //obs.insert(State(4.6, 3, 0));
+  State goal(1, 3.5, -1.5708);
+  State start(1, 0, -1.5708);
   //Environment env(16, 16, obs, goal);
   Environment env(10, 10, obs, goal);
   HybridAStar<State, Action, double, Environment> hybridAStar(env);
