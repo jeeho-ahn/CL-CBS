@@ -1,7 +1,7 @@
 agents:
   - start: [1, 0, -1.5708]
     name: agent0
-    goal: [1, 3.5, -1.5708]
+    goal: [0, 0.5, 3.14159]
     
 map:
   dimensions: [10, 10]

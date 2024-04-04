@@ -32,24 +32,32 @@ using libMultiRobotPlanning::Neighbor;
 using libMultiRobotPlanning::PlanResult;
 using namespace libMultiRobotPlanning;
 
+
+
 namespace Constants {
 static float steer_limit = 0.3;
 static float speed_limit = 0.4f;
 static float L = 0.29f;
 // [m] --- The minimum turning radius of the vehicle
 static float r = L / tanf(fabs(steer_limit));
+//static float r = 0.5;
 //static const float r = 3;
 //static const float deltat = 6.75 / 180.0 * M_PI;
 static float deltat = speed_limit / r;
 // [#] --- A movement cost penalty for turning (choosing non straight motion
 // primitives)
-static const float penaltyTurning = 1.2;
+static const float penaltyTurning = 50;
 // [#] --- A movement cost penalty for reversing (choosing motion primitives >
 // 2)
 static const float penaltyReversing = 100.0;
 // [#] --- A movement cost penalty for change of direction (changing from
 // primitives < 3 to primitives > 2)
 static const float penaltyCOD = 2.0;
+
+static bool allow_reverse = true;
+
+static float heuristicWeight = 1.0f;
+
 // map resolution
 static const float mapResolution = 0.1;
 static const float xyResolution = r * deltat;
@@ -258,6 +266,7 @@ class Environment {
            (uint64_t)(s.x / Constants::xyResolution);
   }
 
+/*
   double admissibleHeuristic(const State& s) {
     // non-holonomic-without-obstacles heuristic: use a Reeds-Shepp
     ompl::base::ReedsSheppStateSpace reedsSheppPath(Constants::r);
@@ -288,8 +297,55 @@ class Environment {
 
     return std::max({reedsSheppCost, euclideanCost, twoDCost});
   }
+  */
+   int admissibleHeuristic(const State &s) {
+    double reedsSheppCost = 0;
+    // non-holonomic-without-obstacles heuristic: use a Reeds-Shepp (or Dubins if reversing not allowed)
+    std::unique_ptr<ompl::base::SE2StateSpace> path(
+        Constants::allow_reverse ? (ompl::base::SE2StateSpace *)(new ompl::base::ReedsSheppStateSpace(Constants::r))
+                                 : (ompl::base::SE2StateSpace *)(new ompl::base::DubinsStateSpace(Constants::r))
+    );
+    OmplState* rsStart = (OmplState *)path->allocState();
+    OmplState* rsEnd = (OmplState *)path->allocState();
+    rsStart->setXY(s.x, s.y);
+    rsStart->setYaw(s.yaw);
+    rsEnd->setXY(m_goal.x, m_goal.y);
+    rsEnd->setYaw(m_goal.yaw);
+    reedsSheppCost = path->distance(rsStart, rsEnd);
+    path->freeState(rsStart);
+    path->freeState(rsEnd);
+    // std::cout << "ReedsShepps cost:" << reedsSheppCost << std::endl;
+    // Euclidean distance
+    double euclideanCost =
+        sqrt(pow(m_goal.x - s.x, 2) + pow(m_goal.y - s.y, 2));
+    // std::cout << "Euclidean cost:" << euclideanCost << std::endl;
+    // holonomic-with-obstacles heuristic
+    double twoDoffset = sqrt(pow((s.x - static_cast<int>(s.x)) -
+                                     (m_goal.x - static_cast<int>(m_goal.x)),
+                                 2) +
+                             pow((s.y - static_cast<int>(s.y)) -
+                                     (m_goal.y - static_cast<int>(m_goal.y)),
+                                 2));
+    double twoDCost =
+        holonomic_cost_map[static_cast<int>(s.x / Constants::mapResolution)]
+                          [static_cast<int>(s.y / Constants::mapResolution)] -
+        twoDoffset;
+    // std::cout << "holonomic cost:" << twoDCost << std::endl;
 
-  bool isSolution(
+    return Constants::heuristicWeight * std::max({reedsSheppCost, euclideanCost, twoDCost});
+  }
+
+   bool isSolution(
+      const State &state, double gscore,
+      std::unordered_map<State, std::tuple<State, Action, double, double>,
+                         std::hash<State>> &_camefrom) {
+    
+    bool isSol = Constants::allow_reverse ? isSolutionWithReverse(state, gscore, _camefrom) : isSolutionWithoutReverse(state, gscore, _camefrom);
+    
+    return isSol;
+  }
+
+  bool isSolutionWithReverse(
       const State& state, double gscore,
       std::unordered_map<State, std::tuple<State, Action, double, double>,
                          std::hash<State>>& _camefrom) {
@@ -395,11 +451,119 @@ class Environment {
     return true;
   }
 
+  bool isSolutionWithoutReverse(
+      const State &state, double gscore,
+      std::unordered_map<State, std::tuple<State, Action, double, double>,
+                         std::hash<State>> &_camefrom) {
+    double goal_distance =
+        sqrt(pow(state.x - getGoal().x, 2) + pow(state.y - getGoal().y, 2));
+    if (goal_distance > 10 * (Constants::LB + Constants::LF)) return false;
+    ompl::base::DubinsStateSpace dubinsSpace(Constants::r);
+    OmplState *dubinsStart = (OmplState *)dubinsSpace.allocState();
+    OmplState *dubinsEnd = (OmplState *)dubinsSpace.allocState();
+    dubinsStart->setXY(state.x, state.y);
+    dubinsStart->setYaw(-state.yaw);
+    dubinsEnd->setXY(getGoal().x, getGoal().y);
+    dubinsEnd->setYaw(-getGoal().yaw);
+    ompl::base::DubinsStateSpace::DubinsPath dubinsPath =
+        dubinsSpace.dubins(dubinsStart, dubinsEnd);
+    dubinsSpace.freeState(dubinsStart);
+    dubinsSpace.freeState(dubinsEnd);
+
+    std::vector<State> path;
+    std::unordered_map<State, std::tuple<State, Action, double, double>,
+                       std::hash<State>>
+        cameFrom;
+    cameFrom.clear();
+    path.emplace_back(state);
+    for (auto pathidx = 0; pathidx < 3; pathidx++) {
+      if (fabs(dubinsPath.length_[pathidx]) < 1e-6) continue;
+      double deltat = 0, dx = 0, act = 0, cost = 0;
+      switch (dubinsPath.type_[pathidx]) {
+        case 0:  // DUBINS_LEFT
+          deltat = -dubinsPath.length_[pathidx];
+          dx = Constants::r * sin(-deltat);
+          // dy = Constants::r * (1 - cos(-deltat));
+          act = 2;
+          cost = dubinsPath.length_[pathidx] * Constants::r *
+                 Constants::penaltyTurning;
+          break;
+        case 1:  // DUBINS_STRAIGHT
+          deltat = 0;
+          dx = dubinsPath.length_[pathidx] * Constants::r;
+          // dy = 0;
+          act = 0;
+          cost = dx;
+          break;
+        case 2:  // DUBINS_RIGHT
+          deltat = dubinsPath.length_[pathidx];
+          dx = Constants::r * sin(deltat);
+          // dy = -Constants::r * (1 - cos(deltat));
+          act = 1;
+          cost = dubinsPath.length_[pathidx] * Constants::r *
+                 Constants::penaltyTurning;
+          break;
+        default:
+          std::cout << "\033[1m\033[31m"
+                    << "Warning: Receive unknown DubinsPath type"
+                    << "\033[0m\n";
+          break;
+      }
+
+
+      State s = path.back();
+
+      /*
+      std::vector<std::pair<State, double>> next_path;
+      if (generatePath(s, act, deltat, dx, next_path)) {
+        for (auto iter = next_path.begin(); iter != next_path.end(); iter++) {
+          State next_s = iter->first;
+          gscore += iter->second;
+          if (!(next_s == path.back())) {
+            cameFrom.insert(std::make_pair<>(
+                next_s,
+                std::make_tuple<>(path.back(), act, iter->second, gscore)));
+          }
+          path.emplace_back(next_s);
+        }
+        
+      } else {
+        return false;
+      }
+      */
+
+     std::vector<std::pair<State, double>> next_path =
+          generatePath(s, act, deltat, dx);
+      // State next_s(s.x + dx * cos(-s.yaw) - dy * sin(-s.yaw),
+      //              s.y + dx * sin(-s.yaw) + dy * cos(-s.yaw),
+      //              Constants::normalizeHeadingRad(s.yaw + deltat));
+      for (auto iter = next_path.begin(); iter != next_path.end(); iter++) {
+        State next_s = iter->first;
+        if (!stateValid(next_s))
+          return false;
+        else {
+          gscore += iter->second;
+          if (!(next_s == path.back())) {
+            cameFrom.insert(std::make_pair<>(
+                next_s,
+                std::make_tuple<>(path.back(), act, iter->second, gscore)));
+          }
+          path.emplace_back(next_s);
+        }
+      }
+    }
+
+    m_goal = path.back();
+    _camefrom.insert(cameFrom.begin(), cameFrom.end());
+    return true;
+  }
+
   void getNeighbors(const State& s, Action action,
                     std::vector<Neighbor<State, Action, double>>& neighbors) {
     neighbors.clear();
     double g = Constants::dx[0];
-    for (Action act = 0; act < 6; act++) {  // has 6 directions for Reeds-Shepp
+    //for (Action act = 0; act < 6; act++) {  // has 6 directions for Reeds-Shepp
+    for (Action act = 0; act < (Constants::allow_reverse ? 6 : 3); act++) {  // has 6 directions for Reeds-Shepp, 3 for Dubins
       double xSucc, ySucc, yawSucc;
       double g = Constants::dx[0];
       xSucc = s.x + Constants::dx[act] * cos(-s.yaw) -
@@ -615,8 +779,8 @@ int main() {
   //obs.insert(State(6.93504, 0.747862, 0));
   //obs.insert(State(6.81566, 4.75936, 0));
   //obs.insert(State(4.6, 3, 0));
-  State goal(1, 3.5, -1.5708);
-  State start(1, 0, -1.5708);
+  State goal(0, 0.5, 3.14159);
+  State start(1, 0, -1 * M_PI_2);
   //Environment env(16, 16, obs, goal);
   Environment env(10, 10, obs, goal);
   HybridAStar<State, Action, double, Environment> hybridAStar(env);
