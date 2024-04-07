@@ -54,7 +54,7 @@ static const float penaltyReversing = 100.0;
 // primitives < 3 to primitives > 2)
 static const float penaltyCOD = 2.0;
 
-static bool allow_reverse = true;
+static bool allow_reverse = false;
 
 static float heuristicWeight = 1.0f;
 
@@ -451,6 +451,97 @@ class Environment {
     return true;
   }
 
+  // Interpolate points along a straight line segment
+  void interpolateStraight(double startX, double startY, double startTheta, double length, double stepSize, std::vector<std::pair<double, double>>& path) {
+      while (length > 0) {
+          path.push_back(std::make_pair(startX, startY));
+          startX += stepSize * cos(startTheta);
+          startY += stepSize * sin(startTheta);
+          length -= stepSize;
+      }
+  }
+
+  // Interpolate points along a circular arc (right or left turn)
+  void interpolateCircular(double startX, double startY, double startTheta, double radius, double length, double stepSize, bool clockwise, std::vector<std::pair<double, double>>& path) {
+      double deltaTheta = stepSize / radius;
+      double sign = clockwise ? -1.0 : 1.0;
+
+      while (length > 0) {
+          path.push_back(std::make_pair(startX, startY));
+          startTheta += deltaTheta * sign;
+          startX = startX + radius * (sin(startTheta) - sin(startTheta - deltaTheta * sign));
+          startY = startY - radius * (cos(startTheta) - cos(startTheta - deltaTheta * sign));
+          length -= stepSize;
+      }
+  }
+
+  // Generate a smooth path from Dubins path segments
+  std::vector<std::pair<double, double>> generateSmoothPath(const ompl::base::DubinsStateSpace::DubinsPath& dubinsPath, double stepSize) {
+      std::vector<std::pair<double, double>> smoothPath;
+      double startX = 1; // Initialize starting position
+      double startY = 0.0;
+      double startTheta = -1 * M_PI_2; // Initialize starting orientation
+
+      for (size_t i = 0; i < 3; ++i) {
+          switch (dubinsPath.type_[i]) {
+              case 0:  // Right turn
+                  interpolateCircular(startX, startY, startTheta, Constants::r, dubinsPath.length_[i], stepSize, true, smoothPath);
+                  break;
+              case 1:  // Straight line
+                  interpolateStraight(startX, startY, startTheta, dubinsPath.length_[i], stepSize, smoothPath);
+                  break;
+              case 2:  // Left turn
+                  interpolateCircular(startX, startY, startTheta, Constants::r, dubinsPath.length_[i], stepSize, false, smoothPath);
+                  break;
+          }
+          // Update startX, startY, and startTheta for the next segment
+          startX = smoothPath.back().first;
+          startY = smoothPath.back().second;
+          startTheta += dubinsPath.dtheta_[i];
+      }
+
+      return smoothPath;
+  }
+
+
+  ompl::base::DubinsStateSpace::DubinsPath findDubins(State& start, State& goal)
+  {
+    ompl::base::DubinsStateSpace dubinsSpace(Constants::r);
+    OmplState *dubinsStart = (OmplState *)dubinsSpace.allocState();
+    OmplState *dubinsEnd = (OmplState *)dubinsSpace.allocState();
+    dubinsStart->setXY(start.x, start.y);
+    dubinsStart->setYaw(-start.yaw);
+    dubinsEnd->setXY(goal.x, goal.y);
+    dubinsEnd->setYaw(-goal.yaw);
+    ompl::base::DubinsStateSpace::DubinsPath dubinsPath =
+        dubinsSpace.dubins(dubinsStart, dubinsEnd);
+
+    for (auto pathidx = 0; pathidx < 3; pathidx++) {
+      switch (dubinsPath.type_[pathidx]) {
+        case 0:  // DUBINS_LEFT
+          std::cout << "Left" << std::endl;
+          break;
+        case 1:  // DUBINS_STRAIGHT
+          std::cout << "Straight" << std::endl;
+          break;
+        case 2:  // DUBINS_RIGHT
+          std::cout << "Right" << std::endl;
+          break;
+        default:
+          std::cout << "\033[1m\033[31m"
+                    << "Warning: Receive unknown DubinsPath type"
+                    << "\033[0m\n";
+          break;
+      }
+      std::cout << fabs(dubinsPath.length_[pathidx]) << std::endl;
+    }
+
+    auto path_g = generateSmoothPath(dubinsPath,0.1);
+    
+
+    return dubinsPath;
+  }
+
   bool isSolutionWithoutReverse(
       const State &state, double gscore,
       std::unordered_map<State, std::tuple<State, Action, double, double>,
@@ -788,6 +879,12 @@ int main() {
   Timer timer;
   bool searchSuccess = hybridAStar.search(start, solution);
   timer.stop();
+
+
+  //test dubins curve
+  auto dbs = env.findDubins(start,goal);
+
+
 
   std::string outputFile = "output_h.yaml";
   std::ofstream out(outputFile);
