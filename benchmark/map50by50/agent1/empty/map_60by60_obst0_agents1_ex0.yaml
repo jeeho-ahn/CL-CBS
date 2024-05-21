@@ -1,9 +1,9 @@
 agents:
-  - start: [1, 0, -1.5708]
+  - start: [1, 1, 0.541052]
     name: agent0
-    goal: [0, 0.5, 3.14159]
+    goal: [17, 17, 3.14159]
     
 map:
-  dimensions: [10, 10]
+  dimensions: [20, 20]
   obstacles: 
     - [1.16318, 2.44999]

@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
     try:
         with open(os.path.abspath(os.path.join(
-                os.getcwd(), ".."))+"/src/config.yaml") as config_file:
+                os.getcwd(), ".."))+"/CL-CBS/src/config.yaml") as config_file:
             carConfig = yaml.load(config_file, Loader=yaml.FullLoader)
             # global carWidth, LF, LB, obsRadius, framesPerMove
             carWidth = carConfig["carWidth"]

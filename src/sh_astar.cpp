@@ -32,8 +32,6 @@ using libMultiRobotPlanning::Neighbor;
 using libMultiRobotPlanning::PlanResult;
 using namespace libMultiRobotPlanning;
 
-
-
 namespace Constants {
 static float steer_limit = 0.3;
 static float speed_limit = 0.4f;
@@ -239,13 +237,13 @@ class Environment {
     updateCostmap();
 
     //test dynamic_obs
-    dynamic_obs.insert(std::pair<int,State>(1,State(2.46318, 2.44999, 0,1)));
-    dynamic_obs.insert(std::pair<int,State>(2,State(2.06318, 2.44999, 0,2)));
-    dynamic_obs.insert(std::pair<int,State>(3,State(1.76318, 2.44999, 0,3)));
-    dynamic_obs.insert(std::pair<int,State>(4,State(1.46318, 2.44999, 0,4)));
-    dynamic_obs.insert(std::pair<int,State>(5,State(1.16318, 2.44999, 0,5)));
-    dynamic_obs.insert(std::pair<int,State>(6,State(0.86318, 2.44999, 0,6)));
-    dynamic_obs.insert(std::pair<int,State>(7,State(0.56318, 2.44999, 0,7)));
+    //dynamic_obs.insert(std::pair<int,State>(1,State(2.46318, 2.44999, 0,1)));
+    //dynamic_obs.insert(std::pair<int,State>(2,State(2.06318, 2.44999, 0,2)));
+    //dynamic_obs.insert(std::pair<int,State>(3,State(1.76318, 2.44999, 0,3)));
+    //dynamic_obs.insert(std::pair<int,State>(4,State(1.46318, 2.44999, 0,4)));
+    //dynamic_obs.insert(std::pair<int,State>(5,State(1.16318, 2.44999, 0,5)));
+    //dynamic_obs.insert(std::pair<int,State>(6,State(0.86318, 2.44999, 0,6)));
+    //dynamic_obs.insert(std::pair<int,State>(7,State(0.56318, 2.44999, 0,7)));
     std::cout << "test dobs addeed" << std::endl;
   }
 
@@ -451,6 +449,7 @@ class Environment {
     return true;
   }
 
+/*
   // Interpolate points along a straight line segment
   void interpolateStraight(double startX, double startY, double startTheta, double length, double stepSize, std::vector<std::pair<double, double>>& path) {
       while (length > 0) {
@@ -502,7 +501,7 @@ class Environment {
 
       return smoothPath;
   }
-
+*/
 
   ompl::base::DubinsStateSpace::DubinsPath findDubins(State& start, State& goal)
   {
@@ -536,7 +535,8 @@ class Environment {
       std::cout << fabs(dubinsPath.length_[pathidx]) << std::endl;
     }
 
-    auto path_g = generateSmoothPath(dubinsPath,0.1);
+    //auto path_g = generateSmoothPath(dubinsPath,0.1);
+    //dubinsSpace.printState();
     
 
     return dubinsPath;
@@ -869,22 +869,23 @@ int main() {
   //obs.insert(State(6.2493, 3.45836, 0));
   //obs.insert(State(6.93504, 0.747862, 0));
   //obs.insert(State(6.81566, 4.75936, 0));
-  //obs.insert(State(4.6, 3, 0));
-  State goal(0, 0.5, 3.14159);
-  State start(1, 0, -1 * M_PI_2);
+  //obs.insert(State(2, 2, 0));
+  //State goal(0, 0.5, 3.14159);
+  //State start(1, 0, -1 * M_PI_2);
+
+  State start(1, 1, -1.4312);
+  State goal(17, 17, -1*M_PI);
+  
   //Environment env(16, 16, obs, goal);
-  Environment env(10, 10, obs, goal);
+  Environment env(40, 40, obs, goal);
   HybridAStar<State, Action, double, Environment> hybridAStar(env);
   PlanResult<State, Action, double> solution;
   Timer timer;
   bool searchSuccess = hybridAStar.search(start, solution);
   timer.stop();
 
-
   //test dubins curve
-  auto dbs = env.findDubins(start,goal);
-
-
+  //auto dbs = env.findDubins(start,goal);
 
   std::string outputFile = "output_h.yaml";
   std::ofstream out(outputFile);
